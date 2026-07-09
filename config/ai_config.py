@@ -10,22 +10,28 @@ from __future__ import annotations
 ACTIVE_PROVIDER: str = "gemini"
 
 # ── Provider priority (fallback order) ──────────────────────────────────────
-# gemini → groq → nvidia_nim → openrouter
-# glm is kept in the registry but excluded from auto-fallback unless added here.
-PROVIDER_PRIORITY: list[str] = ["gemini", "groq", "nvidia_nim", "openrouter"]
+# gemini → groq → nvidia_nim → glm → openrouter
+# Each provider is tried in order; unconfigured providers are skipped silently.
+PROVIDER_PRIORITY: list[str] = ["gemini", "groq", "nvidia_nim", "glm", "openrouter"]
 
 # ── Per-provider model identifiers ──────────────────────────────────────────
+# Sources (verified July 2026):
+#   gemini     — google.com/gemini (flash-lite: free, fast)
+#   groq       — console.groq.com/docs/models  (llama-3.3-70b-versatile: free production)
+#   nvidia_nim — build.nvidia.com              (meta/llama-3.3-70b-instruct: stable free)
+#   glm        — open.bigmodel.cn              (glm-4-flash: free tier)
+#   openrouter — openrouter.ai                 (gpt-4o-mini: widely available)
 PROVIDER_MODELS: dict[str, str] = {
     "gemini":     "gemini-flash-lite-latest",
-    "groq":       "llama3-8b-8192",
+    "groq":       "llama-3.3-70b-versatile",
     "nvidia_nim": "meta/llama-3.3-70b-instruct",
-    "openrouter": "openai/gpt-4o-mini",
     "glm":        "glm-4-flash",
+    "openrouter": "openai/gpt-4o-mini",
 }
 
 # ── Timeouts (seconds) ──────────────────────────────────────────────────────
 REQUEST_TIMEOUT: int  = 15   # per-provider request timeout
-FALLBACK_TIMEOUT: int = 35   # total time budget across all fallbacks
+FALLBACK_TIMEOUT: int = 60   # total time budget across all fallbacks (5 providers)
 
 # ── Retry settings ───────────────────────────────────────────────────────────
 # Retries apply only to transient / timeout errors.

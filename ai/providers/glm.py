@@ -157,7 +157,9 @@ class GLMProvider(AIProvider):
 def _classify_http_status(status: int) -> str:
     if status == 429:
         return ERR_QUOTA
-    if status in (401, 403):
+    if 400 <= status < 500:
+        # All 4xx errors are deterministic client/config problems — don't retry.
+        # 401/403 → bad key; 400/404/422 → bad request or model name.
         return ERR_PERMANENT
     if status >= 500:
         return ERR_TRANSIENT
