@@ -1,36 +1,28 @@
-# [Project name]
+# Ani Zeo Bot
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+An AI-powered Telegram anime companion bot. Helps users discover anime, manage watchlists, and get personalized recommendations.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `python main.py` — start the Telegram bot (runs continuously)
+- Required secrets: `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Python 3.12
+- `python-telegram-bot` 21.10 — Telegram Bot API
+- `google-genai` 2.10.0 — Gemini AI (primary), GLM + NVIDIA NIM (fallbacks)
+- AniList GraphQL API + Jikan REST API — anime data
+- JSON files for persistent storage (watchlist, favorites, profiles)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
-
-## Architecture decisions
-
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
-
-## Product
-
-_Describe the high-level user-facing capabilities of this app once they exist._
+- `bot.py` — main bot file, all Telegram handlers
+- `ai/` — AI routing, providers (Gemini, GLM, NVIDIA NIM, Groq, OpenRouter)
+- `config/ai_config.py` — AI tuning constants (model, timeouts, retries)
+- `services/` — intent detection
+- `tools/` — anime search, details, recommendations, genre, airing, etc.
+- `watchlist.json`, `profiles.json` — user data (persisted locally)
 
 ## User preferences
 
@@ -38,8 +30,6 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- The bot file was originally named `bot (1).py`; it is now `bot.py`. `main.py` imports it.
+- AI provider fallback order: Gemini → GLM → NVIDIA NIM (set in `config/ai_config.py`)
+- `ZHIPUAI_API_KEY` and `NVIDIA_API_KEY` are optional — only needed for fallback providers
