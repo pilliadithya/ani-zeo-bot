@@ -33,6 +33,9 @@ from ai.formatter import ResponseFormatter
 from ai.providers.base_provider import Message
 from ai.router import AIRouter
 from config.ai_config import MAX_HISTORY_TURNS
+from watchlist import WatchlistManager, parse as parse_watchlist, is_watchlist_phrase
+from watchlist.manager import normalise_status
+from watchlist.store import VALID_STATUSES
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +92,35 @@ def clear_history(user_id: int) -> None:
 
 
 # ── Singletons ────────────────────────────────────────────────────────────────
-_router = AIRouter()
+_router   = AIRouter()
+_wl_mgr   = WatchlistManager()
+
+
+# ── Watchlist action dispatcher ───────────────────────────────────────────────
+
+def _handle_watchlist_action(action, user_id: int) -> str:
+    """
+    Dispatch a parsed WatchlistAction to WatchlistManager and return the
+    reply string.  Called synchronously — all storage I/O is blocking JSON.
+    """
+    from watchlist.nlp import WatchlistAction  # local import avoids circular ref
+
+    if action.action == "show":
+        return _wl_mgr.show(user_id)
+
+    if action.action == "add":
+        _, msg = _wl_mgr.add(user_id, action.anime, action.status or "planned")
+        return msg
+
+    if action.action == "remove":
+        _, msg = _wl_mgr.remove(user_id, action.anime)
+        return msg
+
+    if action.action == "mark":
+        _, msg = _wl_mgr.update_status(user_id, action.anime, action.status or "planned")
+        return msg
+
+    return "Sorry, I didn't understand that watchlist command."
 
 
 # ── Main handler ──────────────────────────────────────────────────────────────
@@ -116,6 +147,24 @@ async def handle_text_message(
 
     if text in _KEYBOARD_LABELS:
         return
+
+    # ── Watchlist NLP intercept ───────────────────────────────────────────────
+    # Handle watchlist phrases directly without sending them to the AI router.
+    if is_watchlist_phrase(text):
+        action = parse_watchlist(text)
+        if action is not None:
+            await message.chat.send_action("typing")
+            reply = _handle_watchlist_action(action, user_id)
+            try:
+                await message.reply_text(reply, parse_mode="Markdown")
+            except Exception:
+                await message.reply_text(reply)
+            logger.info(
+                "Watchlist NLP | user=%d | action=%s anime=%r status=%r",
+                user_id, action.action, action.anime, action.status,
+            )
+            return
+    # ── End watchlist intercept ───────────────────────────────────────────────
 
     logger.info("AI chat | user=%d | %r", user_id, text[:120])
     await message.chat.send_action("typing")
