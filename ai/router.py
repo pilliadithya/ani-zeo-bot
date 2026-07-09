@@ -42,16 +42,22 @@ from ai.providers.base_provider import (
 )
 from ai.providers.gemini import GeminiProvider
 from ai.providers.glm import GLMProvider
+from ai.providers.groq import GroqProvider
 from ai.providers.nvidia_nim import NvidiaNimProvider
+from ai.providers.openrouter import OpenRouterProvider
 
 logger = logging.getLogger(__name__)
 
 # ── Provider registry ─────────────────────────────────────────────────────────
+# Add new providers here — the router picks them up automatically via
+# PROVIDER_PRIORITY in config/ai_config.py.
 
 PROVIDER_REGISTRY: dict[str, type[AIProvider]] = {
     "gemini":     GeminiProvider,
-    "glm":        GLMProvider,
+    "groq":       GroqProvider,
     "nvidia_nim": NvidiaNimProvider,
+    "openrouter": OpenRouterProvider,
+    "glm":        GLMProvider,
 }
 
 # ── Errors that should never be retried ───────────────────────────────────────

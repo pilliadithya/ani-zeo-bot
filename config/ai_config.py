@@ -10,13 +10,17 @@ from __future__ import annotations
 ACTIVE_PROVIDER: str = "gemini"
 
 # ── Provider priority (fallback order) ──────────────────────────────────────
-PROVIDER_PRIORITY: list[str] = ["gemini", "glm", "nvidia_nim"]
+# gemini → groq → nvidia_nim → openrouter
+# glm is kept in the registry but excluded from auto-fallback unless added here.
+PROVIDER_PRIORITY: list[str] = ["gemini", "groq", "nvidia_nim", "openrouter"]
 
 # ── Per-provider model identifiers ──────────────────────────────────────────
 PROVIDER_MODELS: dict[str, str] = {
     "gemini":     "gemini-flash-lite-latest",
-    "glm":        "glm-4-flash",
+    "groq":       "llama3-8b-8192",
     "nvidia_nim": "meta/llama-3.3-70b-instruct",
+    "openrouter": "openai/gpt-4o-mini",
+    "glm":        "glm-4-flash",
 }
 
 # ── Timeouts (seconds) ──────────────────────────────────────────────────────
