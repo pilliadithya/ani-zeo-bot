@@ -10,23 +10,26 @@ from __future__ import annotations
 ACTIVE_PROVIDER: str = "gemini"
 
 # ── Provider priority (fallback order) ──────────────────────────────────────
-# gemini → groq → nvidia_nim → glm → openrouter
-# Each provider is tried in order; unconfigured providers are skipped silently.
-PROVIDER_PRIORITY: list[str] = ["gemini", "groq", "nvidia_nim", "glm", "openrouter"]
+# gemini → groq → nvidia_nim → openrouter
+# nvidia_nim internally cascades: Nemotron → GLM 5.2 (both on NVIDIA Build API,
+# same NVIDIA_API_KEY). GLM 5.2 is therefore NOT a separate top-level provider.
+PROVIDER_PRIORITY: list[str] = ["gemini", "groq", "nvidia_nim", "openrouter"]
 
 # ── Per-provider model identifiers ──────────────────────────────────────────
 # Sources (verified July 2026):
-#   gemini     — google.com/gemini (flash-lite: free, fast)
-#   groq       — console.groq.com/docs/models  (llama-3.3-70b-versatile: free production)
-#   nvidia_nim — build.nvidia.com              (meta/llama-3.3-70b-instruct: stable free)
-#   glm        — open.bigmodel.cn              (glm-4-flash: free tier)
-#   openrouter — openrouter.ai                 (gpt-4o-mini: widely available)
+#   gemini              — google.com/gemini  (flash-lite: free, fast)
+#   groq                — console.groq.com   (llama-3.3-70b-versatile: free production)
+#   nvidia_nim          — build.nvidia.com   (Nemotron 49B: primary model)
+#   nvidia_nim_fallback — build.nvidia.com   (GLM 5.2 via NVIDIA Build API: secondary)
+#   glm                 — open.bigmodel.cn   (glm-4-flash: kept for direct ZhipuAI use)
+#   openrouter          — openrouter.ai      (gpt-4o-mini: last-resort fallback)
 PROVIDER_MODELS: dict[str, str] = {
-    "gemini":     "gemini-flash-lite-latest",
-    "groq":       "llama-3.3-70b-versatile",
-    "nvidia_nim": "meta/llama-3.3-70b-instruct",
-    "glm":        "glm-4-flash",
-    "openrouter": "openai/gpt-4o-mini",
+    "gemini":              "gemini-flash-lite-latest",
+    "groq":                "llama-3.3-70b-versatile",
+    "nvidia_nim":          "nvidia/llama-3.3-nemotron-super-49b-v1",
+    "nvidia_nim_fallback": "z-ai/glm-5.2",
+    "glm":                 "glm-4-flash",
+    "openrouter":          "openai/gpt-4o-mini",
 }
 
 # ── Timeouts (seconds) ──────────────────────────────────────────────────────
