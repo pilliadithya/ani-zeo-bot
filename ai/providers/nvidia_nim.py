@@ -60,13 +60,13 @@ _RETRYABLE_FOR_NEXT_MODEL: frozenset[str] = frozenset({
 # Model cascade: tried in order until one succeeds.
 _NVIDIA_MODELS: list[str] = [
     PROVIDER_MODELS.get("nvidia_nim",          "nvidia/llama-3.3-nemotron-super-49b-v1"),
-    PROVIDER_MODELS.get("nvidia_nim_fallback",  "deepseek-ai/deepseek-v4-flash"),
+    PROVIDER_MODELS.get("nvidia_nim_fallback",  "z-ai/glm-5.2"),
 ]
 
 
 _MODEL_TIMEOUTS: dict[str, float] = {
-    _NVIDIA_MODELS[0]: 35.0,   # Nemotron 49B        — ~0.3–5 s observed
-    _NVIDIA_MODELS[1]: 35.0,   # DeepSeek V4 Flash   — ~0.9 s observed
+    _NVIDIA_MODELS[0]: 35.0,   # Nemotron 49B  — ~0.3–5 s observed
+    _NVIDIA_MODELS[1]: 60.0,   # GLM 5.2       — reasoning model; allow longer inference
 }
 _DEFAULT_MODEL_TIMEOUT = 35.0
 

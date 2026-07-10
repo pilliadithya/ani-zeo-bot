@@ -52,6 +52,11 @@ logger = logging.getLogger(__name__)
 # Add new providers here — the router picks them up automatically via
 # PROVIDER_PRIORITY in config/ai_config.py.
 
+# All known providers are registered here so they can be selected explicitly
+# (e.g. via the `preferred` argument).  Only providers listed in
+# PROVIDER_PRIORITY are used for automatic fallback routing.
+# openrouter is intentionally excluded from PROVIDER_PRIORITY — it is
+# registered here for optional/manual use only.
 PROVIDER_REGISTRY: dict[str, type[AIProvider]] = {
     "gemini":     GeminiProvider,
     "groq":       GroqProvider,

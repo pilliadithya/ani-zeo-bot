@@ -10,26 +10,22 @@ from __future__ import annotations
 ACTIVE_PROVIDER: str = "gemini"
 
 # ── Provider priority (fallback order) ──────────────────────────────────────
-# gemini → groq → nvidia_nim → openrouter
+# gemini → groq → nvidia_nim
 # nvidia_nim internally cascades: Nemotron → GLM 5.2 (both on NVIDIA Build API,
 # same NVIDIA_API_KEY). GLM 5.2 is therefore NOT a separate top-level provider.
-PROVIDER_PRIORITY: list[str] = ["gemini", "groq", "nvidia_nim", "openrouter"]
+PROVIDER_PRIORITY: list[str] = ["gemini", "groq", "nvidia_nim"]
 
 # ── Per-provider model identifiers ──────────────────────────────────────────
 # Sources (verified July 2026):
 #   gemini              — google.com/gemini  (flash-lite: free, fast)
 #   groq                — console.groq.com   (llama-3.3-70b-versatile: free production)
 #   nvidia_nim          — build.nvidia.com   (Nemotron 49B: primary, uses NVIDIA_API_KEY)
-#   nvidia_nim_fallback — build.nvidia.com   (DeepSeek V4 Flash: secondary, same key)
-#                         z-ai/glm-5.2 is confirmed on NVIDIA NIM but has >60 s cold-start
-#                         latency as of July 2026 (model is 6 days old, infra not warmed).
-#   openrouter          — openrouter.ai      (gpt-4o-mini: last-resort fallback)
+#   nvidia_nim_fallback — build.nvidia.com   (GLM 5.2: secondary, same NVIDIA_API_KEY)
 PROVIDER_MODELS: dict[str, str] = {
     "gemini":              "gemini-flash-lite-latest",
     "groq":                "llama-3.3-70b-versatile",
     "nvidia_nim":          "nvidia/llama-3.3-nemotron-super-49b-v1",
-    "nvidia_nim_fallback": "deepseek-ai/deepseek-v4-flash",
-    "openrouter":          "openai/gpt-4o-mini",
+    "nvidia_nim_fallback": "z-ai/glm-5.2",
 }
 
 # ── Timeouts (seconds) ──────────────────────────────────────────────────────
