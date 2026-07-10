@@ -28,6 +28,7 @@ from config.ai_config import (
     REQUEST_TIMEOUT,
     RETRY_DELAY,
     MAX_HISTORY_SENT,
+    NVIDIA_REQUEST_TIMEOUT,
 )
 from ai.providers.base_provider import (
     AIProvider,
@@ -299,7 +300,9 @@ class AIRouter:
             if remaining <= 0:
                 return None, "Fallback timeout reached"
 
-            timeout = min(REQUEST_TIMEOUT, remaining)
+            # Honour a per-provider timeout override (e.g. slow reasoning models).
+            provider_timeout = getattr(instance, "request_timeout", REQUEST_TIMEOUT)
+            timeout = min(provider_timeout, remaining)
             t0 = time.monotonic()
 
             try:

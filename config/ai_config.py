@@ -20,19 +20,22 @@ PROVIDER_PRIORITY: list[str] = ["gemini", "groq", "nvidia_nim", "openrouter"]
 #   gemini              — google.com/gemini  (flash-lite: free, fast)
 #   groq                — console.groq.com   (llama-3.3-70b-versatile: free production)
 #   nvidia_nim          — build.nvidia.com   (Nemotron 49B: primary, uses NVIDIA_API_KEY)
-#   nvidia_nim_fallback — build.nvidia.com   (GLM 5.2: secondary, same NVIDIA_API_KEY)
+#   nvidia_nim_fallback — build.nvidia.com   (DeepSeek V4 Flash: secondary, same key)
+#                         z-ai/glm-5.2 is confirmed on NVIDIA NIM but has >60 s cold-start
+#                         latency as of July 2026 (model is 6 days old, infra not warmed).
 #   openrouter          — openrouter.ai      (gpt-4o-mini: last-resort fallback)
 PROVIDER_MODELS: dict[str, str] = {
     "gemini":              "gemini-flash-lite-latest",
     "groq":                "llama-3.3-70b-versatile",
     "nvidia_nim":          "nvidia/llama-3.3-nemotron-super-49b-v1",
-    "nvidia_nim_fallback": "z-ai/glm-5.2",
+    "nvidia_nim_fallback": "deepseek-ai/deepseek-v4-flash",
     "openrouter":          "openai/gpt-4o-mini",
 }
 
 # ── Timeouts (seconds) ──────────────────────────────────────────────────────
-REQUEST_TIMEOUT: int  = 15   # per-provider request timeout
-FALLBACK_TIMEOUT: int = 60   # total time budget across all fallbacks (5 providers)
+REQUEST_TIMEOUT: int         = 15   # default per-provider request timeout
+NVIDIA_REQUEST_TIMEOUT: int  = 65   # NVIDIA NIM: reasoning models can be slow
+FALLBACK_TIMEOUT: int        = 120  # total time budget across all fallbacks
 
 # ── Retry settings ───────────────────────────────────────────────────────────
 # Retries apply only to transient / timeout errors.

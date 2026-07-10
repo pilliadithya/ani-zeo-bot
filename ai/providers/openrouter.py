@@ -103,7 +103,7 @@ class OpenRouterProvider(AIProvider):
                 resp = await client.post(_ENDPOINT, json=payload, headers=headers)
 
             if resp.status_code != 200:
-                error_type = _classify_http_status(resp.status_code)
+                error_type = _classify_http_status(resp.status_code, resp.text)
                 error_msg  = f"HTTP {resp.status_code}: {resp.text[:200]}"
                 logger.error("OpenRouterProvider [%s]: %s", error_type, error_msg)
                 return ProviderResponse(
@@ -169,12 +169,15 @@ class OpenRouterProvider(AIProvider):
         return messages
 
 
-def _classify_http_status(status: int) -> str:
+def _classify_http_status(status: int, body: str = "") -> str:
     if status == 429:
         return ERR_QUOTA
+    if status == 403 and "limit exceeded" in body.lower():
+        # Key spending-limit exhausted — treat as quota (5 min cooldown) rather
+        # than permanent, since the user can raise the limit on the dashboard.
+        return ERR_QUOTA
     if 400 <= status < 500:
-        # All 4xx errors are deterministic client/config problems — don't retry.
-        # 401/403 → bad key; 400/404/422 → bad request or model name.
+        # Other 4xx: bad key (401), unauthorised (403), bad request (400/422).
         return ERR_PERMANENT
     if status >= 500:
         return ERR_TRANSIENT
