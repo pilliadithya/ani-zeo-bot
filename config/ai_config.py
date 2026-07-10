@@ -19,16 +19,14 @@ PROVIDER_PRIORITY: list[str] = ["gemini", "groq", "nvidia_nim", "openrouter"]
 # Sources (verified July 2026):
 #   gemini              — google.com/gemini  (flash-lite: free, fast)
 #   groq                — console.groq.com   (llama-3.3-70b-versatile: free production)
-#   nvidia_nim          — build.nvidia.com   (Nemotron 49B: primary model)
-#   nvidia_nim_fallback — build.nvidia.com   (GLM 5.2 via NVIDIA Build API: secondary)
-#   glm                 — open.bigmodel.cn   (glm-4-flash: kept for direct ZhipuAI use)
+#   nvidia_nim          — build.nvidia.com   (Nemotron 49B: primary, uses NVIDIA_API_KEY)
+#   nvidia_nim_fallback — build.nvidia.com   (GLM 5.2: secondary, same NVIDIA_API_KEY)
 #   openrouter          — openrouter.ai      (gpt-4o-mini: last-resort fallback)
 PROVIDER_MODELS: dict[str, str] = {
     "gemini":              "gemini-flash-lite-latest",
     "groq":                "llama-3.3-70b-versatile",
     "nvidia_nim":          "nvidia/llama-3.3-nemotron-super-49b-v1",
     "nvidia_nim_fallback": "z-ai/glm-5.2",
-    "glm":                 "glm-4-flash",
     "openrouter":          "openai/gpt-4o-mini",
 }
 

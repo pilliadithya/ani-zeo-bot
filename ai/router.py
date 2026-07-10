@@ -41,7 +41,6 @@ from ai.providers.base_provider import (
     ERR_UNCONFIGURED,
 )
 from ai.providers.gemini import GeminiProvider
-from ai.providers.glm import GLMProvider
 from ai.providers.groq import GroqProvider
 from ai.providers.nvidia_nim import NvidiaNimProvider
 from ai.providers.openrouter import OpenRouterProvider
@@ -57,7 +56,6 @@ PROVIDER_REGISTRY: dict[str, type[AIProvider]] = {
     "groq":       GroqProvider,
     "nvidia_nim": NvidiaNimProvider,
     "openrouter": OpenRouterProvider,
-    "glm":        GLMProvider,
 }
 
 # ── Errors that should never be retried ───────────────────────────────────────
