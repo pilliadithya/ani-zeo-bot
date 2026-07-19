@@ -1,29 +1,42 @@
 """
-AnimeSearchTool — search for anime or manga by title.
+AnimeSearchTool — thin adapter between ToolManager and AnimeSearchService.
 
-Data source: AniList GraphQL API (same endpoint used by /search command).
-Status:      STUB — not implemented until Sprint 3.
+All search logic (AniList, Jikan, caching, fallback) lives in
+services/anime_search.py.  This tool is intentionally a one-liner:
+it calls the service and maps the AnimeSearchResult dataclass to the
+flat dict contract that ToolManager and AI function-calling expect.
 
-Sprint 3 implementation notes:
-  1. Call AniList Media query with search=$query.
-  2. Return title, score, episodes, status, genres, synopsis, studios, trailer.
+Data flow:
+    ToolManager.dispatch(Intent.SEARCH_ANIME, query=...) 
+        → AnimeSearchTool.run(query=...)
+            → AnimeSearchService.search(query)
+                → AniList / Jikan / cache
+            → AnimeSearchResult.to_dict()
 """
 from __future__ import annotations
 
 from tools.base_tool import BaseTool
+from services.anime_search import search_service
 
 
 class AnimeSearchTool(BaseTool):
     tool_name        = "anime_search"
-    tool_description = "Search for an anime or manga by title and return its details."
+    tool_description = (
+        "Search for an anime by title and return its details. "
+        "Handles typos, partial names, romanised names, and alternative titles. "
+        "Falls back to MAL (Jikan) if AniList returns no result."
+    )
 
     def schema(self) -> dict:
         return {
             "name":        self.tool_name,
             "description": self.tool_description,
             "parameters": {
-                "query": {"type": "string", "description": "Anime or manga title to search."},
-                "type":  {"type": "string", "description": "'ANIME' or 'MANGA' (default ANIME)."},
+                "query": {
+                    "type":        "string",
+                    "description": "Anime title to search (full, partial, or romanised).",
+                    "required":    True,
+                },
             },
         }
 
@@ -31,18 +44,28 @@ class AnimeSearchTool(BaseTool):
         self,
         query: str = "",
         user_id: int = 0,
-        type: str = "ANIME",
         **kwargs,
     ) -> dict:
         """
-        Args:
-            query:   Title to search.
-            type:    Media type — "ANIME" or "MANGA".
+        Search for an anime and return a structured result dict.
 
-        Returns:
-            {"title": str, "score": float, "episodes": int, "status": str,
-             "genres": list, "synopsis": str, "studios": list, "trailer_url": str}
+        Returns a dict with all AnimeSearchResult fields on success.
+        Returns {"error": reason, "found": False} when not found —
+        ToolManager will treat this as a miss and fall through to AIRouter.
 
-        TODO (Sprint 3): call AniList Media(search:) query, return dict.
+        Never raises — all exceptions are caught inside AnimeSearchService.
         """
-        return {"error": "AnimeSearchTool not implemented yet — Sprint 3"}
+        if not query:
+            return {"error": "No query provided", "found": False}
+
+        result = await search_service.search(query)
+
+        if not result.found:
+            return {
+                "error": f"Anime not found for query: {query!r}",
+                "found": False,
+                "query": query,
+                "source": result.source,
+            }
+
+        return result.to_dict()
