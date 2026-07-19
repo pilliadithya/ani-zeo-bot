@@ -1,3 +1,4 @@
+import asyncio
 import os
 import json
 import random
@@ -14,6 +15,7 @@ from telegram import (
 )
 from telegram.ext import (
     ApplicationBuilder,
+    ApplicationHandlerStop,
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
@@ -698,9 +700,33 @@ def get_platforms(external_links):
             platforms.append(site)
     return list(dict.fromkeys(platforms))  # deduplicate, preserve order
 
+
+# ── Async API helpers ──────────────────────────────────────────────────────────
+# All external HTTP calls go through these wrappers so the asyncio event loop
+# is never blocked.  The synchronous `requests` library runs in a thread pool
+# via asyncio.to_thread().
+
+async def anilist_async(query_str, variables=None):
+    """Non-blocking AniList GraphQL request."""
+    return await asyncio.to_thread(anilist, query_str, variables)
+
+
+async def jikan_get(path: str, params: dict | None = None, timeout: int = 10):
+    """Non-blocking Jikan v4 GET request."""
+    url = f"https://api.jikan.moe/v4{path}"
+    def _req():
+        return requests.get(url, params=params or {}, timeout=timeout)
+    return await asyncio.to_thread(_req)
+
+
 # ── Reply Keyboard Handler ─────────────────────────────────────────────────
 
 async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    # Onboarding intercept — consume message and stop further handler groups
+    if await handle_onboarding(update, context):
+        raise ApplicationHandlerStop
     text = update.message.text
     if text == "🔍 Search":
         await update.message.reply_text("Use /search followed by an anime name.\nExample: /search naruto")
@@ -748,21 +774,154 @@ START_INLINE = InlineKeyboardMarkup([
     ],
 ])
 
+LANGUAGE_INLINE = InlineKeyboardMarkup([
+    [
+        InlineKeyboardButton("🇬🇧 English",  callback_data="lang:English"),
+        InlineKeyboardButton("🌐 Tenglish",  callback_data="lang:Tenglish"),
+    ],
+    [
+        InlineKeyboardButton("🇮🇳 Hinglish", callback_data="lang:Hinglish"),
+        InlineKeyboardButton("🎭 Tamilish",  callback_data="lang:Tamilish"),
+    ],
+])
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    text = (
-        "🎌 *Ani Zeo*\n"
-        "_Your Anime Companion_\n\n"
-        "Welcome! Explore anime info, rankings, trailers,\n"
-        "seasonal picks, and much more.\n\n"
-        "📊 *Version:* 2.0\n"
-        "⚙️ *Commands:* 20\n\n"
-        "Tap a button below or type any /command directly.\n\n"
-        "_Powered by AniList & Jikan API_\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "*Ani Zeo v2.0*"
+    uid = str(update.effective_user.id)
+    profiles = load_profiles()
+
+    if uid in profiles and profiles[uid].get("nickname"):
+        # ── Returning user: skip onboarding ────────────────────────────────
+        nickname = profiles[uid]["nickname"]
+        text = (
+            f"🎌 *Welcome back, {nickname}!*\n"
+            "_Your Anime Companion_\n\n"
+            "Explore anime info, rankings, trailers,\n"
+            "seasonal picks, and much more.\n\n"
+            "📊 *Version:* 3.0  |  ⚙️ *Commands:* 30+\n\n"
+            "Tap a button below or type any /command directly.\n\n"
+            "_Powered by AniList & Jikan API_\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "*Ani Zeo v3.0*"
+        )
+        await update.message.reply_text(text, parse_mode="Markdown", reply_markup=START_INLINE)
+        await update.message.reply_text("Quick-access menu:", reply_markup=MAIN_KEYBOARD)
+    else:
+        # ── New user: begin onboarding step 1 ──────────────────────────────
+        context.user_data["onboarding_step"] = 1
+        await update.message.reply_text(
+            "🎌 *Welcome to Ani Zeo!*\n"
+            "_Your Anime Companion_ 🌸\n\n"
+            "Let's set up your profile in two quick steps. 🚀\n\n"
+            "*Step 1 of 2* — What should I call you?\n"
+            "_(Enter your name or nickname)_",
+            parse_mode="Markdown",
+        )
+
+
+# ── Onboarding helpers ──────────────────────────────────────────────────────
+
+async def _complete_onboarding(
+    send_fn,           # coroutine factory: send_fn(text, **kwargs) → awaitable
+    context: ContextTypes.DEFAULT_TYPE,
+    uid: str,
+    username: str | None,
+    lang: str,
+) -> None:
+    """Persist nickname + language and send personalised welcome."""
+    nickname = context.user_data.pop("onboarding_nickname", "Otaku")
+    context.user_data.pop("onboarding_step", None)
+
+    profiles = load_profiles()
+    if uid not in profiles:
+        profiles[uid] = {
+            "join_date": datetime.now().strftime("%Y-%m-%d"),
+            "username": username or "Unknown",
+            "anime_searched": 0,
+            "manga_searched": 0,
+            "commands_used": {},
+            "genre_searches": {},
+        }
+    profiles[uid]["nickname"] = nickname
+    profiles[uid]["language"] = lang
+    if username:
+        profiles[uid]["username"] = username
+    save_profiles(profiles)
+
+    lang_note = {
+        "English":  "I'll keep things clean and proper. 🇬🇧",
+        "Tenglish": "Mixing Telugu & English — oka chinna mix! 🌐",
+        "Hinglish": "Hindi + English ka mast combo! 🇮🇳",
+        "Tamilish": "Tamil + English blend — super-ah! 🎭",
+    }.get(lang, "")
+
+    welcome = (
+        f"✅ *Profile saved!*\n\n"
+        f"👋 Hey *{nickname}*, welcome to Ani Zeo! 🎌\n"
+        f"Language set to *{lang}*. {lang_note}\n\n"
+        "You're all set — explore anime info, rankings,\n"
+        "trailers, seasonal picks, and much more.\n\n"
+        "📊 *Version:* 3.0  |  ⚙️ *Commands:* 30+\n"
+        "Type /help to see everything I can do. 🚀"
     )
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=START_INLINE)
-    await update.message.reply_text("Quick-access menu:", reply_markup=MAIN_KEYBOARD)
+    await send_fn(welcome, parse_mode="Markdown", reply_markup=START_INLINE)
+    await send_fn("Quick-access menu:", reply_markup=MAIN_KEYBOARD)
+
+
+async def handle_onboarding(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """
+    Process onboarding step if active.
+    Returns True when the message was consumed (caller should stop further handling).
+    """
+    step = context.user_data.get("onboarding_step")
+    if not step:
+        return False
+
+    text = (update.message.text or "").strip()
+    user = update.effective_user
+
+    if step == 1:
+        nickname = text[:30] if text else "Otaku"
+        context.user_data["onboarding_nickname"] = nickname
+        context.user_data["onboarding_step"] = 2
+        await update.message.reply_text(
+            f"Nice to meet you, *{nickname}*! 🌟\n\n"
+            "*Step 2 of 2* — Pick your preferred chat language:",
+            parse_mode="Markdown",
+            reply_markup=LANGUAGE_INLINE,
+        )
+        return True
+
+    if step == 2:
+        # User typed a language instead of tapping a button
+        typed = text.title()
+        lang = typed if typed in ("English", "Tenglish", "Hinglish", "Tamilish") else "English"
+        uid = str(user.id)
+        await _complete_onboarding(
+            update.message.reply_text, context, uid, user.username, lang
+        )
+        return True
+
+    return False
+
+
+async def lang_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle language selection during onboarding (inline button tap)."""
+    query = update.callback_query
+    await query.answer()
+    lang = query.data.split(":")[1]
+    uid = str(update.effective_user.id)
+    user = update.effective_user
+
+    # Remove the language buttons so the chat looks clean
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    async def send_fn(text, **kwargs):
+        await context.bot.send_message(chat_id=query.message.chat_id, text=text, **kwargs)
+
+    await _complete_onboarding(send_fn, context, uid, user.username, lang)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(HELP_TEXT, reply_markup=MAIN_KEYBOARD)
@@ -2377,6 +2536,7 @@ def main() -> None:
 
     app.add_handler(CallbackQueryHandler(quiz_callback, pattern=r"^quiz:"))
     app.add_handler(CallbackQueryHandler(cmd_callback, pattern=r"^cmd:"))
+    app.add_handler(CallbackQueryHandler(lang_callback, pattern=r"^lang:"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_button))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message), group=1)
 
