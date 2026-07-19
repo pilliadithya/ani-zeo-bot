@@ -32,7 +32,8 @@ from telegram.constants import ParseMode
 from ai.formatter import ResponseFormatter
 from ai.providers.base_provider import Message
 from ai.router import AIRouter
-from config.ai_config import MAX_HISTORY_TURNS
+from config.ai_config import MAX_HISTORY_TURNS, ENABLE_INTENT_ROUTING
+from services.intent import Intent, IntentClassifier
 from watchlist import WatchlistManager, parse as parse_watchlist, is_watchlist_phrase
 from watchlist.manager import normalise_status
 from watchlist.store import VALID_STATUSES
@@ -92,8 +93,9 @@ def clear_history(user_id: int) -> None:
 
 
 # ── Singletons ────────────────────────────────────────────────────────────────
-_router   = AIRouter()
-_wl_mgr   = WatchlistManager()
+_router     = AIRouter()
+_wl_mgr     = WatchlistManager()
+_classifier = IntentClassifier()
 
 
 # ── Watchlist action dispatcher ───────────────────────────────────────────────
@@ -165,6 +167,24 @@ async def handle_text_message(
             )
             return
     # ── End watchlist intercept ───────────────────────────────────────────────
+
+    # ── Intent detection ──────────────────────────────────────────────────────
+    # Classify before routing.  The detected intent is stored in user_data so
+    # any handler in bot.py can read it; it does NOT change which AI provider
+    # is called — routing remains purely health/fallback driven.
+    if ENABLE_INTENT_ROUTING:
+        intent, confidence = _classifier.classify_with_confidence(text)
+        context.user_data["last_intent"]      = intent
+        context.user_data["last_intent_label"] = _classifier.display_name(intent)
+        logger.info(
+            "Intent | user=%d | %s (%s) | confidence=%.1f | %r",
+            user_id,
+            intent.name,
+            _classifier.display_name(intent),
+            confidence,
+            text[:80],
+        )
+    # ── End intent detection ──────────────────────────────────────────────────
 
     logger.info("AI chat | user=%d | %r", user_id, text[:120])
     await message.chat.send_action("typing")

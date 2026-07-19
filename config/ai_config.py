@@ -59,7 +59,7 @@ DEFAULT_TEMPERATURE: float = 0.7
 ENABLE_AI_CHAT: bool        = True    # natural-language conversation active
 ENABLE_TOOL_CALLING: bool   = False   # AI-driven tool calls
 ENABLE_RESPONSE_CACHE: bool = False   # in-memory response caching
-ENABLE_INTENT_ROUTING: bool = False   # keyword intent classifier
+ENABLE_INTENT_ROUTING: bool = True    # keyword intent classifier
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 LOG_PROVIDER_CALLS: bool = True
