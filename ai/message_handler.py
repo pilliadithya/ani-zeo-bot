@@ -33,7 +33,7 @@ from telegram.constants import ParseMode
 
 from ai.formatter import ResponseFormatter
 from ai.providers.base_provider import Message
-from ai.prompts import SYSTEM_PROMPT
+from ai.prompts import SYSTEM_PROMPT, build_system_prompt
 from ai.router import AIRouter
 from config.ai_config import MAX_HISTORY_TURNS, ENABLE_INTENT_ROUTING
 from services.intent import Intent, IntentClassifier
@@ -166,7 +166,7 @@ async def _build_context_for_route(
     if not context_block:
         return None
 
-    return SYSTEM_PROMPT + context_block
+    return build_system_prompt() + context_block
 
 
 # ── Watchlist action dispatcher ───────────────────────────────────────────────
@@ -271,6 +271,12 @@ async def handle_text_message(
             # Context building failure must never block the AI response.
             logger.warning("ContextBuilder | failed | user=%d | %s", user_id, exc)
     # ── End context building ──────────────────────────────────────────────────
+
+    # Guarantee the current date is always present, even when context building
+    # is disabled or produced no useful block (route_system would otherwise be
+    # None and providers would fall back to the bare SYSTEM_PROMPT).
+    if route_system is None:
+        route_system = build_system_prompt()
 
     logger.info("AI chat | user=%d | %r", user_id, text[:120])
     await message.chat.send_action("typing")
