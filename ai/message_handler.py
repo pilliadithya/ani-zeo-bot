@@ -21,8 +21,10 @@ Pipeline:
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
+from pathlib import Path
 
 from telegram import Update
 from telegram.error import BadRequest
@@ -31,9 +33,12 @@ from telegram.constants import ParseMode
 
 from ai.formatter import ResponseFormatter
 from ai.providers.base_provider import Message
+from ai.prompts import SYSTEM_PROMPT
 from ai.router import AIRouter
 from config.ai_config import MAX_HISTORY_TURNS, ENABLE_INTENT_ROUTING
 from services.intent import Intent, IntentClassifier
+from services.anime_search import search_service
+from services.context_builder import ContextBuilder
 from watchlist import WatchlistManager, parse as parse_watchlist, is_watchlist_phrase
 from watchlist.manager import normalise_status
 from watchlist.store import VALID_STATUSES
@@ -96,6 +101,58 @@ def clear_history(user_id: int) -> None:
 _router     = AIRouter()
 _wl_mgr     = WatchlistManager()
 _classifier = IntentClassifier()
+
+# ── User profile reader ───────────────────────────────────────────────────────
+# Reads profiles.json directly — avoids importing bot.py (circular dep).
+_PROFILES_FILE = Path("profiles.json")
+
+
+def _read_user_profile(user_id: int) -> dict:
+    """Return the stored profile dict for *user_id*, or {} on any error."""
+    try:
+        data = json.loads(_PROFILES_FILE.read_text(encoding="utf-8"))
+        return data.get(str(user_id), {})
+    except Exception:
+        return {}
+
+
+# ── Context builder ───────────────────────────────────────────────────────────
+
+async def _build_context_for_route(
+    text: str,
+    intent: Intent,
+    user_id: int,
+) -> str | None:
+    """
+    Build a context-enriched system prompt to pass to the AI router.
+
+    Returns SYSTEM_PROMPT + clean context block when useful context exists,
+    or None to let the router use SYSTEM_PROMPT unchanged.
+
+    Pipeline:
+      - Always injects user personalisation (nickname, language, intent).
+      - For anime-specific intents, searches for the anime and injects
+        a clean structured context block (not raw API JSON).
+      - For all other intents, injects user-only context (no search call).
+    """
+    profile = _read_user_profile(user_id)
+
+    if ContextBuilder.should_search(intent):
+        result  = await search_service.search(text)
+        ai_ctx  = ContextBuilder.from_search_result(result, intent, profile)
+        logger.info(
+            "ContextBuilder | user=%d | intent=%s | found=%s | title=%r",
+            user_id, intent.name, ai_ctx.found,
+            ai_ctx.anime.display_title if ai_ctx.anime else None,
+        )
+    else:
+        ai_ctx = ContextBuilder.build_user_only(intent, profile, text)
+
+    context_block = ContextBuilder.to_text(ai_ctx)
+    if not context_block:
+        return None
+
+    return SYSTEM_PROMPT + context_block
 
 
 # ── Watchlist action dispatcher ───────────────────────────────────────────────
@@ -172,9 +229,10 @@ async def handle_text_message(
     # Classify before routing.  The detected intent is stored in user_data so
     # any handler in bot.py can read it; it does NOT change which AI provider
     # is called — routing remains purely health/fallback driven.
+    intent: Intent = Intent.UNKNOWN
     if ENABLE_INTENT_ROUTING:
         intent, confidence = _classifier.classify_with_confidence(text)
-        context.user_data["last_intent"]      = intent
+        context.user_data["last_intent"]       = intent
         context.user_data["last_intent_label"] = _classifier.display_name(intent)
         logger.info(
             "Intent | user=%d | %s (%s) | confidence=%.1f | %r",
@@ -186,6 +244,20 @@ async def handle_text_message(
         )
     # ── End intent detection ──────────────────────────────────────────────────
 
+    # ── Context building ──────────────────────────────────────────────────────
+    # Build a clean structured context block and inject it into the system
+    # prompt.  The AI NEVER receives raw API JSON — only the clean text block
+    # produced by ContextBuilder.to_text().
+    # Returns None when no useful context exists → router uses SYSTEM_PROMPT.
+    route_system: str | None = None
+    if ENABLE_INTENT_ROUTING:
+        try:
+            route_system = await _build_context_for_route(text, intent, user_id)
+        except Exception as exc:
+            # Context building failure must never block the AI response.
+            logger.warning("ContextBuilder | failed | user=%d | %s", user_id, exc)
+    # ── End context building ──────────────────────────────────────────────────
+
     logger.info("AI chat | user=%d | %r", user_id, text[:120])
     await message.chat.send_action("typing")
 
@@ -195,6 +267,7 @@ async def handle_text_message(
         response = await _router.route(
             prompt=text,
             history=history or None,
+            system=route_system,
         )
     except Exception as exc:
         logger.error("AI chat | unexpected error | user=%d | %s", user_id, exc)
