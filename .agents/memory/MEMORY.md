@@ -1,1 +1,2 @@
 - [Anime News Service](anime-news-service.md) — RSS sources: MAL (primary), Anime Corner (secondary), AniList GraphQL (trending/fallback); lazy callable pattern in _try_sources avoids coroutine leaks.
+- [News Context Wiring](news-context-wiring.md) — ANIME_NEWS/TRENDING intents route through AnimeNewsService → ContextBuilder.from_news_result() → to_text(); never raw RSS to AI.

@@ -38,6 +38,7 @@ from ai.router import AIRouter
 from config.ai_config import MAX_HISTORY_TURNS, ENABLE_INTENT_ROUTING
 from services.intent import Intent, IntentClassifier
 from services.anime_search import search_service
+from services.anime_news import news_service
 from services.context_builder import ContextBuilder
 from watchlist import WatchlistManager, parse as parse_watchlist, is_watchlist_phrase
 from watchlist.manager import normalise_status
@@ -144,6 +145,19 @@ async def _build_context_for_route(
             "ContextBuilder | user=%d | intent=%s | found=%s | title=%r",
             user_id, intent.name, ai_ctx.found,
             ai_ctx.anime.display_title if ai_ctx.anime else None,
+        )
+    elif ContextBuilder.should_fetch_news(intent):
+        # Fetch live news, convert to clean context — AI never sees raw RSS.
+        # TRENDING uses fetch_trending(); ANIME_NEWS uses fetch_latest().
+        if intent == Intent.TRENDING:
+            news_result = await news_service.fetch_trending()
+        else:
+            news_result = await news_service.fetch_latest()
+        ai_ctx = ContextBuilder.from_news_result(news_result, intent, profile)
+        logger.info(
+            "ContextBuilder | user=%d | intent=%s | news_found=%s | items=%d | source=%r",
+            user_id, intent.name, news_result.found,
+            news_result.count, news_result.source,
         )
     else:
         ai_ctx = ContextBuilder.build_user_only(intent, profile, text)

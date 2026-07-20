@@ -46,11 +46,13 @@ from services.intent import Intent
 if TYPE_CHECKING:
     from services.anime_search import AnimeSearchResult
 
+from services.anime_news import NewsItem, NewsResult   # runtime import — no circular dep
+
 
 # ── Intents that warrant an anime-title search before routing ─────────────────
 # Add an intent here when its responses benefit from specific title metadata.
-# Intentionally conservative: broad intents (recommendations, news, trending)
-# are left out — the AI handles those from training data.
+# Intentionally conservative: broad intents (recommendations, trending)
+# are left out — news/trending use _NEWS_CONTEXT_INTENTS below.
 
 _ANIME_CONTEXT_INTENTS: frozenset[Intent] = frozenset({
     Intent.SEARCH_ANIME,     # "find / search for X"
@@ -61,6 +63,15 @@ _ANIME_CONTEXT_INTENTS: frozenset[Intent] = frozenset({
     Intent.LORE_QUESTION,    # "what happens in X"
     Intent.EXPLANATION,      # "what is X / explain X"
     Intent.OPEN_QUESTION,    # general question mentioning a title
+})
+
+# ── Intents that warrant a live news fetch before routing ─────────────────────
+# ANIME_NEWS → fetch_latest()   (recent articles from MAL, Anime Corner)
+# TRENDING   → fetch_trending() (currently-airing anime sorted by trending score)
+
+_NEWS_CONTEXT_INTENTS: frozenset[Intent] = frozenset({
+    Intent.ANIME_NEWS,   # "latest anime news", "what's new in anime"
+    Intent.TRENDING,     # "what's trending in anime"
 })
 
 
@@ -148,9 +159,12 @@ class AIContext:
     Callers check `found` before relying on `anime` metadata.
     """
     user:  UserContext
-    anime: AnimeContext | None = None   # None → no specific title context
-    found: bool                = False  # False → AI must not hallucinate details
-    query: str                 = ""     # original user query (for logging / not-found note)
+    anime:      AnimeContext | None = None   # None → no specific title context
+    found:      bool                = False  # False → AI must not hallucinate details
+    query:      str                 = ""     # original user query (for logging / not-found note)
+    # News fields — populated only by from_news_result(); empty list for all other paths.
+    news_items: list[NewsItem]      = field(default_factory=list)
+    news_mode:  str                 = ""     # "latest" | "trending" | ""
 
 
 # ── Builder ────────────────────────────────────────────────────────────────────
@@ -176,10 +190,20 @@ class ContextBuilder:
         Return True when this intent benefits from an anime-title context search.
 
         Conservative: only intents that discuss a *specific* title return True.
-        Broad intents (recommendations, news, rankings) return False — the AI
+        Broad intents (recommendations, rankings) return False — the AI
         handles those from its training data, not from a title lookup.
         """
         return intent in _ANIME_CONTEXT_INTENTS
+
+    @classmethod
+    def should_fetch_news(cls, intent: Intent) -> bool:
+        """
+        Return True when this intent benefits from a live anime news fetch.
+
+        ANIME_NEWS → fetch_latest()   (recent news articles)
+        TRENDING   → fetch_trending() (currently popular airing anime)
+        """
+        return intent in _NEWS_CONTEXT_INTENTS
 
     @classmethod
     def from_search_result(
@@ -287,8 +311,42 @@ class ContextBuilder:
             lines.append("[User]")
             lines.extend(user_lines)
 
+        # ── News section ──────────────────────────────────────────────────────
+        # Rendered when the intent is ANIME_NEWS or TRENDING.
+        # Mutually exclusive with the anime section — a single context always
+        # comes from one path (news fetch OR anime search, never both).
+        if ctx.news_mode:
+            if ctx.news_items:
+                header = (
+                    "Trending Anime"
+                    if ctx.news_mode == "trending"
+                    else "Latest Anime News"
+                )
+                lines.append(f"\n[{header}]")
+                for i, item in enumerate(ctx.news_items, 1):
+                    lines.append(f"  {i}. {item.title}")
+                    meta: list[str] = [item.source_name]
+                    if item.published:
+                        meta.append(item.published)
+                    lines.append(f"     Source:    {' | '.join(meta)}")
+                    if item.summary:
+                        s = item.summary[:200].rstrip()
+                        if len(item.summary) > 200:
+                            s += "…"
+                        lines.append(f"     Summary:   {s}")
+                    if item.url:
+                        lines.append(f"     URL:       {item.url}")
+            else:
+                # All news sources failed — tell the AI to acknowledge the gap
+                lines.append("\n[Note]")
+                lines.append("  No anime news is available right now.")
+                lines.append(
+                    "  Answer from your training knowledge and note that"
+                    " live news cannot be fetched at this moment."
+                )
+
         # ── Anime section ─────────────────────────────────────────────────────
-        if ctx.anime and ctx.found:
+        elif ctx.anime and ctx.found:
             a = ctx.anime
             lines.append(f"\n[Anime: {a.display_title}]")
 
@@ -346,7 +404,9 @@ class ContextBuilder:
             lines.append(f"  Data:      {a.data_source}")
 
         elif ctx.query and not ctx.found:
-            # Explicit not-found note so the AI does not hallucinate
+            # Explicit not-found note so the AI does not hallucinate.
+            # Only reached for anime-search misses, not for news intents
+            # (those are handled by the news_mode branch above).
             lines.append(f"\n[Note]")
             lines.append(f"  No anime data found for: {ctx.query!r}")
             lines.append("  Do not hallucinate anime titles, scores, or episode counts.")
@@ -368,9 +428,37 @@ class ContextBuilder:
         raise NotImplementedError("Character context — Sprint 4")
 
     @classmethod
-    def from_news_result(cls, result, intent=None, user_profile=None) -> AIContext:  # noqa: ANN001
-        """Future: build context from an anime news result."""
-        raise NotImplementedError("News context — Sprint 4")
+    def from_news_result(
+        cls,
+        result: NewsResult,
+        intent: Intent | None = None,
+        user_profile: dict | None = None,
+    ) -> AIContext:
+        """
+        Build an AIContext from a NewsResult.
+
+        Converts raw NewsItem objects into a clean context envelope.
+        The AI NEVER sees RSS field names, raw XML, or internal source
+        identifiers — only the human-readable labeled text produced by to_text().
+
+        Items are capped at 5 to keep the context block within a reasonable
+        token budget.
+
+        Args:
+            result:       NewsResult from news_service.fetch_latest/trending()
+            intent:       Detected Intent (ANIME_NEWS or TRENDING)
+            user_profile: Dict from profiles.json for this user (optional)
+        """
+        user_ctx = cls._build_user_context(intent, user_profile or {})
+        items    = result.items[:5] if result.found else []
+        return AIContext(
+            user=user_ctx,
+            anime=None,
+            found=result.found,
+            query="",
+            news_items=items,
+            news_mode=result.mode,
+        )
 
     @classmethod
     def from_watch_order(cls, franchise, intent=None, user_profile=None) -> AIContext:  # noqa: ANN001
