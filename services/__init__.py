@@ -10,10 +10,12 @@ Public surface
   from services.intent          import Intent, IntentClassifier
   from services.anime_search    import AnimeSearchResult, AnimeSearchService, search_service
   from services.context_builder import AnimeContext, UserContext, AIContext, ContextBuilder
+  from services.anime_news      import NewsItem, NewsResult, AnimeNewsService, news_service
 """
 from services.intent          import Intent, IntentClassifier
 from services.anime_search    import AnimeSearchResult, AnimeSearchService, search_service
 from services.context_builder import AnimeContext, UserContext, AIContext, ContextBuilder
+from services.anime_news      import NewsItem, NewsResult, AnimeNewsService, news_service
 
 __all__ = [
     # intent
@@ -28,4 +30,9 @@ __all__ = [
     "UserContext",
     "AIContext",
     "ContextBuilder",
+    # anime news
+    "NewsItem",
+    "NewsResult",
+    "AnimeNewsService",
+    "news_service",
 ]

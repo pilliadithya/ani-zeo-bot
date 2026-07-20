@@ -1,0 +1,1 @@
+- [Anime News Service](anime-news-service.md) — RSS sources: MAL (primary), Anime Corner (secondary), AniList GraphQL (trending/fallback); lazy callable pattern in _try_sources avoids coroutine leaks.
