@@ -45,6 +45,7 @@ from services.intent import Intent
 
 if TYPE_CHECKING:
     from services.anime_search import AnimeSearchResult
+    from services.anime_intelligence import IntelligenceResult
 
 from services.anime_news import NewsItem, NewsResult   # runtime import — no circular dep
 
@@ -53,16 +54,24 @@ from services.anime_news import NewsItem, NewsResult   # runtime import — no c
 # Add an intent here when its responses benefit from specific title metadata.
 # Intentionally conservative: broad intents (recommendations, trending)
 # are left out — news/trending use _NEWS_CONTEXT_INTENTS below.
+# WATCH_ORDER and MANGA_CONTINUATION are handled by _INTELLIGENCE_INTENTS.
 
 _ANIME_CONTEXT_INTENTS: frozenset[Intent] = frozenset({
     Intent.SEARCH_ANIME,     # "find / search for X"
     Intent.GET_DETAILS,      # "details about X"
     Intent.CHARACTER_LOOKUP, # "who is / voice actor of X"
-    Intent.WATCH_ORDER,      # "watch order for X"
     Intent.DUB_INFO,         # "is X dubbed"
     Intent.LORE_QUESTION,    # "what happens in X"
     Intent.EXPLANATION,      # "what is X / explain X"
     Intent.OPEN_QUESTION,    # general question mentioning a title
+})
+
+# ── Intents handled by the Anime Intelligence Core ────────────────────────────
+# These get franchise manifests + continuation plans instead of simple searches.
+
+_INTELLIGENCE_INTENTS: frozenset[Intent] = frozenset({
+    Intent.WATCH_ORDER,         # "watch order for X", "where to start X"
+    Intent.MANGA_CONTINUATION,  # "manga after anime", "pick up manga for X"
 })
 
 # ── Intents that warrant a live news fetch before routing ─────────────────────
@@ -165,6 +174,9 @@ class AIContext:
     # News fields — populated only by from_news_result(); empty list for all other paths.
     news_items: list[NewsItem]      = field(default_factory=list)
     news_mode:  str                 = ""     # "latest" | "trending" | ""
+    # Intelligence fields — populated only by from_intelligence_result().
+    franchise_context: str          = ""     # pre-rendered watch-order / manga block
+    intelligence_mode: str          = ""     # "watch_order" | "manga_continuation" | ""
 
 
 # ── Builder ────────────────────────────────────────────────────────────────────
@@ -183,6 +195,16 @@ class ContextBuilder:
     """
 
     # ── Public API ─────────────────────────────────────────────────────────────
+
+    @classmethod
+    def should_resolve_intelligence(cls, intent: Intent) -> bool:
+        """
+        Return True when this intent should be handled by the Anime Intelligence Core.
+
+        These intents get franchise manifests and continuation plans rather than
+        a simple title search.  Handled before should_search() in the pipeline.
+        """
+        return intent in _INTELLIGENCE_INTENTS
 
     @classmethod
     def should_search(cls, intent: Intent) -> bool:
@@ -297,6 +319,25 @@ class ContextBuilder:
             ======================
         """
         lines: list[str] = []
+
+        # ── Intelligence section (watch order / manga continuation) ───────────
+        # Mutually exclusive with news and anime sections.
+        if ctx.franchise_context:
+            # User block first (if any), then the pre-rendered intelligence block
+            user_lines_for_intel: list[str] = []
+            if ctx.user.nickname:
+                user_lines_for_intel.append(f"  Nickname: {ctx.user.nickname}")
+            if ctx.user.language:
+                user_lines_for_intel.append(f"  Language: {ctx.user.language}")
+            if ctx.user.intent_label and ctx.user.intent_label != "Unknown":
+                user_lines_for_intel.append(f"  Intent:   {ctx.user.intent_label}")
+            if user_lines_for_intel:
+                lines.append("[User]")
+                lines.extend(user_lines_for_intel)
+            lines.append("")
+            lines.append(ctx.franchise_context)
+            block = "\n".join(lines)
+            return f"\n=== Ani Zeo Context ===\n{block}\n=== End Context ===\n"
 
         # ── User section ──────────────────────────────────────────────────────
         user_lines: list[str] = []
@@ -421,6 +462,126 @@ class ContextBuilder:
 
     # ── Future stubs ───────────────────────────────────────────────────────────
     # Uncomment and implement when the relevant data source is wired.
+
+    @classmethod
+    def from_intelligence_result(
+        cls,
+        result: "IntelligenceResult",
+        intent: Intent | None = None,
+        user_profile: dict | None = None,
+    ) -> AIContext:
+        """
+        Build an AIContext from an IntelligenceResult (watch order / manga continuation).
+
+        Formats the structured franchise and continuation data into a plain-text
+        context block stored in franchise_context.  The AI never sees raw dataclass
+        internals — only the rendered text produced here.
+        """
+        user_ctx = cls._build_user_context(intent, user_profile or {})
+        lines: list[str] = []
+
+        # ── Ambiguous: ask the user ───────────────────────────────────────────
+        if result.ambiguous:
+            lines.append(f"[Clarification Needed: {result.original_query!r}]")
+            if result.clarification:
+                lines.append(f"  {result.clarification}")
+            return AIContext(
+                user=user_ctx,
+                found=False,
+                query=result.original_query,
+                franchise_context="\n".join(lines),
+                intelligence_mode=result.intent,
+            )
+
+        # ── Franchise not found ───────────────────────────────────────────────
+        if not result.franchise or not result.franchise.found:
+            lines.append(f"[Note]")
+            lines.append(
+                f"  No franchise data found for: {result.resolved_title or result.original_query!r}"
+            )
+            lines.append(
+                "  Answer from training knowledge. "
+                "Do not hallucinate episode counts or release dates."
+            )
+            return AIContext(
+                user=user_ctx,
+                found=False,
+                query=result.original_query,
+                franchise_context="\n".join(lines),
+                intelligence_mode=result.intent,
+            )
+
+        franchise = result.franchise
+        continuation = result.continuation
+
+        # ── Manga continuation ────────────────────────────────────────────────
+        if result.intent == "manga_continuation" and continuation:
+            lines.append(f"[Manga Continuation: {franchise.canonical_title}]")
+            if continuation.starting_chapter:
+                lines.append(f"  Start reading from: Chapter {continuation.starting_chapter}")
+            if continuation.manga_note:
+                lines.append(f"  Note: {continuation.manga_note}")
+            if franchise.source_material:
+                lines.append(f"  Source material: {franchise.source_material}")
+
+        # ── Watch / read order ────────────────────────────────────────────────
+        else:
+            order_label = {
+                "canon_only":    "Canon-Only Order",
+                "filler_skipped": "Filler-Skipped Order",
+            }.get(result.intent, "Watch Order")
+
+            lines.append(f"[{order_label}: {franchise.canonical_title}]")
+            if result.original_query.lower() != (result.resolved_title or "").lower():
+                lines.append(f"  Resolved from: {result.original_query!r}")
+
+            if continuation and continuation.sequence:
+                # Main story
+                main = [i for i in continuation.sequence if not i.is_optional]
+                optional = [i for i in continuation.sequence if i.is_optional]
+
+                if main:
+                    lines.append("  Main Story:")
+                    for item in main:
+                        ep_str = f"{item.episodes} eps" if item.episodes else "? eps"
+                        yr_str = f" ({item.year})" if item.year else ""
+                        filler_str = ""
+                        if item.filler_ranges:
+                            filler_str = f" | filler: {item.filler_ranges}"
+                        lines.append(
+                            f"    {item.order}. {item.title}"
+                            f" — {item.fmt} | {ep_str}{yr_str}{filler_str}"
+                        )
+                        if item.notes and item.notes not in ("Finished", "Airing"):
+                            lines.append(f"       {item.notes}")
+
+                if optional:
+                    lines.append("  Optional Content:")
+                    for item in optional:
+                        ep_str = f"{item.episodes} eps" if item.episodes else ""
+                        yr_str = f" ({item.year})" if item.year else ""
+                        ep_part = f" | {ep_str}" if ep_str else ""
+                        lines.append(
+                            f"    - {item.title}"
+                            f" — {item.fmt}{ep_part}{yr_str}"
+                        )
+                        if item.notes:
+                            lines.append(f"       {item.notes}")
+
+            if continuation and continuation.general_note:
+                lines.append(f"  Note: {continuation.general_note}")
+
+            if franchise.source_material and franchise.source_material != "Original":
+                lines.append(f"  Source material: {franchise.source_material}")
+
+        franchise_context = "\n".join(lines)
+        return AIContext(
+            user=user_ctx,
+            found=True,
+            query=result.original_query,
+            franchise_context=franchise_context,
+            intelligence_mode=result.intent,
+        )
 
     @classmethod
     def from_character_result(cls, result, intent=None, user_profile=None) -> AIContext:  # noqa: ANN001

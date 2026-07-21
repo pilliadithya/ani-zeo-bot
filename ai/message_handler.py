@@ -40,6 +40,7 @@ from services.intent import Intent, IntentClassifier
 from services.anime_search import search_service
 from services.anime_news import news_service
 from services.context_builder import ContextBuilder
+from services.anime_intelligence import intelligence_service
 from watchlist import WatchlistManager, parse as parse_watchlist, is_watchlist_phrase
 from watchlist.manager import normalise_status
 from watchlist.store import VALID_STATUSES
@@ -119,6 +120,13 @@ def _read_user_profile(user_id: int) -> dict:
 
 # ── Context builder ───────────────────────────────────────────────────────────
 
+def _intent_to_order_type(intent: Intent) -> str:
+    """Map a routing Intent to an AnimeIntelligence order_type string."""
+    if intent == Intent.MANGA_CONTINUATION:
+        return "manga_continuation"
+    return "watch_order"
+
+
 async def _build_context_for_route(
     text: str,
     intent: Intent,
@@ -131,14 +139,33 @@ async def _build_context_for_route(
     or None to let the router use SYSTEM_PROMPT unchanged.
 
     Pipeline:
-      - Always injects user personalisation (nickname, language, intent).
-      - For anime-specific intents, searches for the anime and injects
-        a clean structured context block (not raw API JSON).
-      - For all other intents, injects user-only context (no search call).
+      1. Intelligence intents (WATCH_ORDER, MANGA_CONTINUATION) → AnimeIntelligence
+         franchise manifest + continuation plan → ContextBuilder.from_intelligence_result()
+      2. Anime-specific intents → anime search → ContextBuilder.from_search_result()
+      3. News/trending intents  → news fetch   → ContextBuilder.from_news_result()
+      4. All others             → user-only context (no search call)
     """
     profile = _read_user_profile(user_id)
 
-    if ContextBuilder.should_search(intent):
+    if ContextBuilder.should_resolve_intelligence(intent):
+        order_type = _intent_to_order_type(intent)
+        try:
+            intel_result = await intelligence_service.resolve_and_plan(text, order_type)
+            ai_ctx = ContextBuilder.from_intelligence_result(intel_result, intent, profile)
+            logger.info(
+                "Intelligence | user=%d | intent=%s | order=%s | resolved=%r | ambiguous=%s",
+                user_id, intent.name, order_type,
+                intel_result.resolved_title, intel_result.ambiguous,
+            )
+        except Exception as exc:
+            # Intelligence failure must never block the AI response — fall back to search.
+            logger.warning(
+                "Intelligence | failed for user=%d | %s — falling back to search", user_id, exc
+            )
+            result = await search_service.search(text)
+            ai_ctx = ContextBuilder.from_search_result(result, intent, profile)
+
+    elif ContextBuilder.should_search(intent):
         result  = await search_service.search(text)
         ai_ctx  = ContextBuilder.from_search_result(result, intent, profile)
         logger.info(

@@ -38,6 +38,7 @@ class Intent(Enum):
     CHARACTER_LOOKUP  = auto()   # "who is", "voice actor"
     STUDIO_LOOKUP     = auto()   # "who made", "which studio"
     WATCH_ORDER       = auto()   # "watch order", "where to start"
+    MANGA_CONTINUATION = auto() # "manga after anime", "read manga from", "pick up manga"
     COMPARE_ANIME     = auto()   # "X vs Y", "compare"
     UPCOMING          = auto()   # "next season", "upcoming"
     DUB_INFO          = auto()   # "dubbed", "English version"
@@ -77,7 +78,8 @@ DISPLAY_NAMES: dict[Intent, str] = {
     Intent.GENRE_BROWSE:      "Anime Information",
     Intent.CHARACTER_LOOKUP:  "Character Information",
     Intent.STUDIO_LOOKUP:     "Anime Information",
-    Intent.WATCH_ORDER:       "Watch Order",
+    Intent.WATCH_ORDER:        "Watch Order",
+    Intent.MANGA_CONTINUATION: "Watch Order",
     Intent.COMPARE_ANIME:     "Compare Anime",
     Intent.UPCOMING:          "Seasonal Anime",
     Intent.DUB_INFO:          "Anime Information",
@@ -112,6 +114,13 @@ _PATTERNS: list[tuple[Intent, list[str]]] = [
     # WATCH_ORDER: only unambiguous watch-order phrases.
     # "watch next" removed — too easily confused with "what to watch next"
     # (a recommendation intent).
+    (Intent.MANGA_CONTINUATION, [r"\bmanga (after|continuation|from chapter)\b",
+                                  r"\bafter (the )?anime\b.{0,30}\bmanga\b",
+                                  r"\bmanga\b.{0,30}\bafter (the )?anime\b",
+                                  r"\bpick up (the )?manga\b",
+                                  r"\bwhere (to start|does).{0,20}manga\b",
+                                  r"\bread manga (after|from|continuation)\b",
+                                  r"\bread order\b"]),
     (Intent.WATCH_ORDER,      [r"\bwatch order\b",
                                 r"\bwhere (to start|do i start)\b",
                                 r"\bwatch first\b",
