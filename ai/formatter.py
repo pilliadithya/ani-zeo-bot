@@ -3,6 +3,7 @@ ResponseFormatter — post-processes AI provider output before it is sent
 to Telegram.
 
 Responsibilities:
+  - Strip AI preamble filler phrases ("Sure!", "Of course!", etc.).
   - Strip code fences and normalise whitespace.
   - Enforce Telegram message length limits.
   - Split oversized messages at natural paragraph breaks.
@@ -19,6 +20,35 @@ TELEGRAM_CAPTION_LIMIT: int = 1_024
 # Soft limit — messages are trimmed here to end on a complete sentence.
 SOFT_LIMIT: int = 3_800
 
+# ── AI preamble patterns ──────────────────────────────────────────────────────
+# These opener phrases add no value and break the card-style layout.
+# Applied once, at the very start of the reply, before any other processing.
+
+_PREAMBLE_RE = re.compile(
+    r"^("
+    # Single-word openers
+    r"Sure[!.]?|"
+    r"Absolutely[!.]?|"
+    r"Certainly[!.]?|"
+    r"Definitely[!.]?|"
+    r"Of\s+course[!.]?|"
+    # Greeting openers
+    r"Great\s+(question|choice|pick)[!.]?|"
+    r"Good\s+(question|choice|ask)[!.]?|"
+    r"Excellent\s+(question|choice)[!.]?|"
+    # "Happy to …" / "I'd be happy to …" patterns
+    r"(?:I'?d\s+be\s+)?(?:happy|glad|delighted)\s+to\s+help[^.!]*[.!]?|"
+    r"(?:I'?m\s+)?(?:happy|glad)\s+you\s+asked[^.!]*[.!]?|"
+    r"I'?d\s+love\s+to\s+help[^.!]*[.!]?|"
+    # "Let me …" starters
+    r"Let\s+me\s+(?:help|show|explain|break|walk)[^.!]*[.!]?|"
+    # "Hey [Name]!" greetings — strip the greeting and the name
+    r"Hey\s+\w+[!,]\s*"
+    r")"
+    r"[,!\s]*",
+    re.IGNORECASE,
+)
+
 
 class ResponseFormatter:
     """
@@ -31,7 +61,14 @@ class ResponseFormatter:
         """
         Main entry point.  Cleans and trims an AI-generated reply
         so it is safe to send as a Telegram message.
+
+        Pipeline:
+          1. Strip AI preamble filler phrases
+          2. Strip code fences
+          3. Normalise whitespace
+          4. Trim to soft limit
         """
+        text = cls._strip_ai_preamble(text)
         text = cls._strip_code_fences(text)
         text = cls._normalise_whitespace(text)
         text = cls._trim_to_soft_limit(text)
@@ -89,6 +126,24 @@ class ResponseFormatter:
         return parts
 
     # ── Private helpers ───────────────────────────────────────────────────────
+
+    @classmethod
+    def _strip_ai_preamble(cls, text: str) -> str:
+        """
+        Remove AI filler opener phrases from the start of a reply.
+
+        Handles patterns like:
+          "Sure! Here's the watch order..."  →  "Here's the watch order..."
+          "Of course! Dragon Ball has..."    →  "Dragon Ball has..."
+          "Hey Adi! Here's what you need:"   →  "Here's what you need:"
+          "Absolutely! Let me help you."     →  ""  (if nothing follows)
+
+        Only strips from the very beginning of the text, never mid-reply.
+        Runs once; does not loop (prevents over-stripping).
+        """
+        stripped = _PREAMBLE_RE.sub("", text, count=1).strip()
+        # If stripping left nothing (the entire reply was filler), return original
+        return stripped if stripped else text
 
     @classmethod
     def _strip_code_fences(cls, text: str) -> str:
