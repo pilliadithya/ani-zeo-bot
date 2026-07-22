@@ -151,7 +151,16 @@ _PATTERNS: list[tuple[Intent, list[str]]] = [
                                 r"\bsimilar to\b",
                                 r"\banime like\b",
                                 r"\bwhat (should|to)\b.*\bwatch\b",
-                                r"\bsuggest"]),
+                                r"\bsuggest",
+                                r"\bsomething (to watch|good to watch)\b",
+                                r"\banything (good|to watch|similar)\b",
+                                r"\bwhat (to binge|should i binge)\b",
+                                r"\bgood anime (to watch|for)\b",
+                                r"\bkuch\b.{0,25}\bwatch\b",       # Hinglish
+                                r"\bsuggest karo\b",               # Hinglish
+                                r"\bcheppu\b.{0,20}\banime\b",     # Tenglish: "cheppu anime"
+                                r"\bsollu\b.{0,20}\banime\b",      # Tamilish: "sollu anime"
+                                r"\bw anime\b"]),                   # Gen Z slang
 
     # ── People & studios ──────────────────────────────────────────────────
     (Intent.CHARACTER_LOOKUP, [r"\bcharacter\b",
@@ -216,15 +225,42 @@ _PATTERNS: list[tuple[Intent, list[str]]] = [
                                 r"\bmy stats\b",
                                 r"\bmy activity\b"]),
 
+    # ── Title quality / worth-watching queries ────────────────────────────
+    # GET_DETAILS: user is asking whether a specific title is good.
+    # Must be BEFORE broad SEARCH_ANIME so "is X good?" doesn't fall through.
+    (Intent.GET_DETAILS,      [r"\bis\b.{1,40}\b(good|great|worth|any good|worth it|worth watching|bad|trash|peak|mid)\b",
+                                r"\bhow (good|is|was)\b.{1,40}\banime\b",
+                                r"\brating\b",
+                                r"\breview\b.{0,20}\banime\b",
+                                r"\bkaisa (hai|tha|laga)\b",        # Hinglish: "Naruto kaisa hai?"
+                                r"\bbaagundha\b",                   # Tenglish: "X baagundha?"
+                                r"\bsuper-?ah\b"]),                 # Tamilish: "X super-ah?"
+
     # ── AI-only / open questions ───────────────────────────────────────────
+    # OPEN_QUESTION: general anime discussion not covered by other intents.
+    # Kept broad — acts as the catch-all for anime conversation.
+    (Intent.OPEN_QUESTION,    [r"\bfinished\b.{0,25}\b(it|watching|anime)\b",
+                                r"\bjust (watched|finished|started)\b",
+                                r"\bstill watching\b",
+                                r"\bwatching\b.{0,20}\banime\b",
+                                r"\bbest (part|arc|episode|scene|moment)\b",
+                                r"\bfavou?rite (anime|character|arc|episode|scene)\b",
+                                r"\boverrated\b",
+                                r"\bunderrated\b",
+                                r"\bmost (hype|hyped|popular|iconic)\b",
+                                r"\btop \d+ anime\b",
+                                r"\banime\b.{1,40}\?$"]),           # any anime question
     (Intent.EXPLANATION,      [r"\bwhat is\b",
                                 r"\bexplain\b",
                                 r"\btell me about\b",
-                                r"\bdefine\b"]),
+                                r"\bdefine\b",
+                                r"\bwhat('?s| are)\b.{1,30}\b(power|ability|system|world)\b"]),
     (Intent.LORE_QUESTION,    [r"\bwhat happens\b",
-                                r"\bwho (killed|was)\b",
+                                r"\bwho (killed|was|is stronger)\b",
                                 r"\bending (of|explained)\b",
-                                r"\bplot of\b"]),
+                                r"\bplot of\b",
+                                r"\bstory of\b",
+                                r"\bwhat (happened|did)\b"]),
 
     # ── General anime search (broad — keep near end) ──────────────────────
     (Intent.SEARCH_ANIME,     [r"\bsearch\b",
@@ -242,7 +278,12 @@ _PATTERNS: list[tuple[Intent, list[str]]] = [
     (Intent.GREETING,         [r"^(hi|hey|hello|yo|sup|hiya|heya|howdy)[!?\s.,]*$",
                                 r"^(good (morning|afternoon|evening|night))[!?\s.,]*$",
                                 r"^(konnichiwa|ohayo|kon(ban)?wa|namaste|vanakkam)[!?\s.,]*$",
-                                r"^(what'?s up|wassup|wsg)[!?\s.,]*$"]),
+                                r"^(what'?s up|wassup|wsg)[!?\s.,]*$",
+                                # Multilingual anime fan greetings
+                                r"^(yo\s+bro|ayo|bro|sup\s+bro|bro\s+bro)[!?\s.,]*$",
+                                r"^(kya (bhai|yaar|scene hai)|bhai+)[!?\s.,]*$",  # Hinglish
+                                r"^(machan|machi|tambi)[!?\s.,]*$",               # Tamilish
+                                r"^(oka\s+bro|emo|ra\s+bro)[!?\s.,]*$"]),         # Tenglish
 ]
 
 

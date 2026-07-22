@@ -41,6 +41,7 @@ from services.anime_search import search_service
 from services.anime_news import news_service
 from services.context_builder import ContextBuilder
 from services.anime_intelligence import intelligence_service
+from services.language_detector import detect_language
 from watchlist import WatchlistManager, parse as parse_watchlist, is_watchlist_phrase
 from watchlist.manager import normalise_status
 from watchlist.store import VALID_STATUSES
@@ -146,6 +147,14 @@ async def _build_context_for_route(
       4. All others             → user-only context (no search call)
     """
     profile = _read_user_profile(user_id)
+
+    # Runtime language detection: override profile preference when the current
+    # message shows clear Tenglish / Hinglish / Tamilish signals.
+    # This ensures the AI matches the language the user is *actually* writing in,
+    # even if their onboarding preference is set to English.
+    detected_lang = detect_language(text)
+    if detected_lang:
+        profile = {**profile, "language": detected_lang}
 
     if ContextBuilder.should_resolve_intelligence(intent):
         order_type = _intent_to_order_type(intent)

@@ -1,4 +1,5 @@
 - [Anime News Service](anime-news-service.md) — RSS sources: MAL (primary), Anime Corner (secondary), AniList GraphQL (trending/fallback); lazy callable pattern in _try_sources avoids coroutine leaks.
 - [Anime Intelligence Core](anime-intelligence-core.md) — watch-order/manga-continuation layer; stop-pattern ordering rule; word-level disambiguation; AIContext new fields; pipeline wiring in message_handler.
+- [v4 NLU + Personality](v4-nlu-personality.md) — language detector (runtime Tenglish/Hinglish/Tamilish), GET_DETAILS/OPEN_QUESTION intent patterns, v4 SYSTEM_PROMPT key decisions.
 - [News Context Wiring](news-context-wiring.md) — ANIME_NEWS/TRENDING intents route through AnimeNewsService → ContextBuilder.from_news_result() → to_text(); never raw RSS to AI.
 - [Date Injection](date-injection.md) — build_system_prompt() in ai/prompts.py appends live date to every AI request; both context and no-context paths covered in message_handler.py.
