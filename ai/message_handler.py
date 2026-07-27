@@ -35,13 +35,14 @@ from ai.formatter import ResponseFormatter
 from ai.providers.base_provider import Message
 from ai.prompts import SYSTEM_PROMPT, build_system_prompt
 from ai.router import AIRouter
-from config.ai_config import MAX_HISTORY_TURNS, ENABLE_INTENT_ROUTING
+from config.ai_config import MAX_HISTORY_TURNS, ENABLE_INTENT_ROUTING, ENABLE_KNOWLEDGE_ROUTER
 from services.intent import Intent, IntentClassifier
 from services.anime_search import search_service
 from services.anime_news import news_service
 from services.context_builder import ContextBuilder
 from services.anime_intelligence import intelligence_service
 from services.language_detector import detect_language
+from services.knowledge_router import knowledge_router
 from watchlist import WatchlistManager, parse as parse_watchlist, is_watchlist_phrase
 from watchlist.manager import normalise_status
 from watchlist.store import VALID_STATUSES
@@ -136,26 +137,39 @@ async def _build_context_for_route(
     """
     Build a context-enriched system prompt to pass to the AI router.
 
-    Returns SYSTEM_PROMPT + clean context block when useful context exists,
-    or None to let the router use SYSTEM_PROMPT unchanged.
+    Returns build_system_prompt() + clean context block when useful context
+    exists, or None to let the caller fall back to a bare system prompt.
 
-    Pipeline:
-      1. Intelligence intents (WATCH_ORDER, MANGA_CONTINUATION) → AnimeIntelligence
-         franchise manifest + continuation plan → ContextBuilder.from_intelligence_result()
-      2. Anime-specific intents → anime search → ContextBuilder.from_search_result()
-      3. News/trending intents  → news fetch   → ContextBuilder.from_news_result()
-      4. All others             → user-only context (no search call)
+    Routing paths
+    ─────────────
+    ENABLE_KNOWLEDGE_ROUTER=True  (default)
+        Delegates to KnowledgeRouter.route() — pluggable, priority-based,
+        web-search-aware.  All service calls happen inside the router.
+
+    ENABLE_KNOWLEDGE_ROUTER=False (fallback)
+        Runs the original inline if/elif logic unchanged.  Set this flag to
+        False to instantly revert to pre-Sprint-A behaviour if needed.
+
+    Profile building and language detection are shared by both paths and
+    executed here so neither path duplicates that logic.
     """
-    profile = _read_user_profile(user_id)
-
-    # Runtime language detection: override profile preference when the current
-    # message shows clear Tenglish / Hinglish / Tamilish signals.
-    # This ensures the AI matches the language the user is *actually* writing in,
-    # even if their onboarding preference is set to English.
+    # ── Profile + language detection (shared by both paths) ───────────────────
+    profile       = _read_user_profile(user_id)
     detected_lang = detect_language(text)
     if detected_lang:
+        # Runtime override: match the language the user is *currently* writing
+        # in, even if their stored profile preference differs.
         profile = {**profile, "language": detected_lang}
 
+    # ── Path A: KnowledgeRouter (Sprint A+) ────────────────────────────────────
+    if ENABLE_KNOWLEDGE_ROUTER:
+        ai_ctx = await knowledge_router.route(text, intent, profile)
+        context_block = ContextBuilder.to_text(ai_ctx)
+        if not context_block:
+            return None
+        return build_system_prompt() + context_block
+
+    # ── Path B: Legacy inline routing (pre-Sprint-A, preserved verbatim) ───────
     if ContextBuilder.should_resolve_intelligence(intent):
         order_type = _intent_to_order_type(intent)
         try:
@@ -167,7 +181,6 @@ async def _build_context_for_route(
                 intel_result.resolved_title, intel_result.ambiguous,
             )
         except Exception as exc:
-            # Intelligence failure must never block the AI response — fall back to search.
             logger.warning(
                 "Intelligence | failed for user=%d | %s — falling back to search", user_id, exc
             )
@@ -183,8 +196,6 @@ async def _build_context_for_route(
             ai_ctx.anime.display_title if ai_ctx.anime else None,
         )
     elif ContextBuilder.should_fetch_news(intent):
-        # Fetch live news, convert to clean context — AI never sees raw RSS.
-        # TRENDING uses fetch_trending(); ANIME_NEWS uses fetch_latest().
         if intent == Intent.TRENDING:
             news_result = await news_service.fetch_trending()
         else:
@@ -201,7 +212,6 @@ async def _build_context_for_route(
     context_block = ContextBuilder.to_text(ai_ctx)
     if not context_block:
         return None
-
     return build_system_prompt() + context_block
 
 

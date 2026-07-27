@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     from services.anime_intelligence import IntelligenceResult
 
 from services.anime_news import NewsItem, NewsResult   # runtime import — no circular dep
+from services.web_search import WebSearchResult        # runtime import — no circular dep
 
 
 # ── Intents that warrant an anime-title search before routing ─────────────────
@@ -177,6 +178,10 @@ class AIContext:
     # Intelligence fields — populated only by from_intelligence_result().
     franchise_context: str          = ""     # pre-rendered watch-order / manga block
     intelligence_mode: str          = ""     # "watch_order" | "manga_continuation" | ""
+    # Web search fields — populated by KnowledgeRouter when ENABLE_WEB_SEARCH=True.
+    # Always empty list for all non-web paths; never None.
+    web_results:       list[WebSearchResult] = field(default_factory=list)
+    web_search_mode:   bool                  = False   # True → render web section in to_text()
 
 
 # ── Builder ────────────────────────────────────────────────────────────────────
@@ -453,6 +458,32 @@ class ContextBuilder:
             lines.append("  Do not hallucinate anime titles, scores, or episode counts.")
             lines.append("  Acknowledge the gap honestly.")
 
+        # ── Web search section ────────────────────────────────────────────────
+        # Rendered when KnowledgeRouter injected live web results.
+        # Placed AFTER internal sections so internal data always takes priority.
+        # The AI is explicitly told to treat these as supplemental sources.
+        if ctx.web_search_mode and ctx.web_results:
+            lines.append("\n[Web Search Results]")
+            lines.append("  Source: live web search — treat as supplemental, not authoritative canon.")
+            lines.append("  If internal anime data above conflicts with a web result, trust the internal data.")
+            for i, r in enumerate(ctx.web_results, 1):
+                lines.append(f"  {i}. {r.title}")
+                if r.source:
+                    lines.append(f"     Source: {r.source}")
+                if r.published_date:
+                    lines.append(f"     Date:   {r.published_date}")
+                if r.snippet:
+                    # Cap snippet at 220 chars to stay within token budget
+                    s = r.snippet[:220].rstrip()
+                    if len(r.snippet) > 220:
+                        s += "…"
+                    lines.append(f"     Snippet: {s}")
+        elif ctx.web_search_mode and not ctx.web_results:
+            # Web search was attempted but returned nothing
+            lines.append("\n[Note]")
+            lines.append("  Live web search returned no results for this query.")
+            lines.append("  Answer from training knowledge and note that live data is unavailable.")
+
         # Return empty string when there is nothing useful to inject
         if not lines:
             return ""
@@ -619,6 +650,39 @@ class ContextBuilder:
             query="",
             news_items=items,
             news_mode=result.mode,
+        )
+
+    @classmethod
+    def from_web_result(
+        cls,
+        query:        str,
+        results:      "list[WebSearchResult]",
+        user_profile: dict | None = None,
+        intent:       "Intent | None" = None,
+    ) -> "AIContext":
+        """
+        Build an AIContext whose primary content is live web search results.
+
+        Used by KnowledgeRouter when the intent is WEB_SEARCH or GENERAL_KNOWLEDGE
+        (i.e. no internal anime source can satisfy the query).
+
+        The AI is instructed to treat these results as supplemental, not as
+        authoritative canon — see the web section in to_text().
+
+        Args:
+            query:        Raw user query (for the not-found note fallback).
+            results:      List from WebSearchService.search() — may be empty.
+            user_profile: Dict from profiles.json (optional).
+            intent:       Detected Intent (optional; used for label).
+        """
+        user_ctx = cls._build_user_context(intent, user_profile or {})
+        return AIContext(
+            user             = user_ctx,
+            anime            = None,
+            found            = bool(results),
+            query            = query,
+            web_results      = list(results),
+            web_search_mode  = True,
         )
 
     @classmethod

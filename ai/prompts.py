@@ -390,6 +390,21 @@ Present the watch order as a numbered list.
 Add a brief one-line note after each entry where helpful.
 """
 
+# ── Web search context instructions (Sprint A) ────────────────────────────────
+# Injected by ContextBuilder.to_text() when KnowledgeRouter adds web results.
+# Referenced here so prompt tuning stays in prompts.py, not in context_builder.
+
+WEB_CONTEXT_NOTE = """\
+The [Web Search Results] block above contains live results from a web search.
+Rules for using web results:
+  1. Treat them as SUPPLEMENTAL — they fill gaps not covered by your training data.
+  2. If internal anime data (AniList / MAL) in this context contradicts a web result,
+     trust the internal data (it is more structured and verified).
+  3. Cite the source when you use a web result: e.g. "According to <source>, …"
+  4. Never present web snippets verbatim — rephrase in your own voice.
+  5. If a web result seems irrelevant to the question, ignore it entirely.
+"""
+
 # ── Fallback ──────────────────────────────────────────────────────────────────
 
 FALLBACK_PROMPT = """\

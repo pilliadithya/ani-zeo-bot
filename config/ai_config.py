@@ -66,3 +66,17 @@ LOG_PROVIDER_CALLS: bool = True
 
 # ── Cache ──────────────────────────────────────────────────────────────────────
 CACHE_TTL_SECONDS: int = 3_600
+
+# ── Knowledge Router ───────────────────────────────────────────────────────────
+# When True, _build_context_for_route() delegates to KnowledgeRouter.
+# Set False to fall back to the original inline routing logic in message_handler.
+ENABLE_KNOWLEDGE_ROUTER: bool = True
+
+# ── Web Search ─────────────────────────────────────────────────────────────────
+# Master switch — False until SERPAPI_KEY is configured.
+# When False, WebSearchService.search() returns [] immediately (zero overhead).
+ENABLE_WEB_SEARCH: bool       = False
+WEB_SEARCH_PROVIDER: str      = "serpapi"   # swappable: "serpapi" | future providers
+WEB_SEARCH_MAX_RESULTS: int   = 3           # snippets injected per query
+WEB_SEARCH_TIMEOUT: int       = 8           # seconds — hard cap per request
+WEB_SEARCH_CACHE_TTL: int     = 1_800       # 30 min — topics don't change mid-conversation

@@ -60,6 +60,9 @@ class Intent(Enum):
     EXPLANATION       = auto()   # "what is …", "explain …"
     LORE_QUESTION     = auto()   # "who killed …", "what happens in …"
     # ── Fallback ───────────────────────────────────────────────────────────
+    # ── Live web / general knowledge (Sprint A) ────────────────────────────────────
+    WEB_SEARCH        = auto()   # "search the web for …", explicit live-data requests
+    GENERAL_KNOWLEDGE = auto()   # current-events queries: announcements, release dates
     UNKNOWN           = auto()
 
 
@@ -97,6 +100,8 @@ DISPLAY_NAMES: dict[Intent, str] = {
     Intent.EXPLANATION:       "Anime Information",
     Intent.LORE_QUESTION:     "Anime Information",
     Intent.UNKNOWN:           "Unknown",
+    Intent.WEB_SEARCH:        "Anime Information",
+    Intent.GENERAL_KNOWLEDGE: "Anime Information",
 }
 
 
@@ -261,6 +266,17 @@ _PATTERNS: list[tuple[Intent, list[str]]] = [
                                 r"\bplot of\b",
                                 r"\bstory of\b",
                                 r"\bwhat (happened|did)\b"]),
+
+    # ── Live web / general knowledge (Sprint A) ──────────────────────────
+    (Intent.WEB_SEARCH,       [r"\bsearch (the )?web (for|about)\b",
+                               r"\blook it up online\b",
+                               r"\bfind online\b",
+                               r"\bweb search\b"]),
+    (Intent.GENERAL_KNOWLEDGE,[r"\bwhat('?s| is) (happening|going on) with\b",
+                               r"\blatest (news|update|info) (on|about)\b",
+                               r"\b(release date|announcement|confirmed|cancelled|renewed)\b",
+                               r"\b(season \d|episode \d+) (release|date|when)\b",
+                               r"\bwhen (is|does|will)\b.{1,30}\b(air|release|come out|drop)\b"]),
 
     # ── General anime search (broad — keep near end) ──────────────────────
     (Intent.SEARCH_ANIME,     [r"\bsearch\b",
