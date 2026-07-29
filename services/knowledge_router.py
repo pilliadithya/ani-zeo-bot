@@ -154,6 +154,11 @@ class KnowledgeRouter:
         is_live_primary     = intent in _LIVE_PRIMARY_INTENTS
         is_live_supplement  = intent in _LIVE_SUPPLEMENT_INTENTS
 
+        logger.info(
+            "KnowledgeRouter | route | intent=%s | live_primary=%s | live_supplement=%s | text=%r",
+            intent.name, is_live_primary, is_live_supplement, text[:80],
+        )
+
         # ── Step 1: run internal sources (never for live-primary intents) ──────
         ai_ctx: AIContext | None = None
 
@@ -200,8 +205,16 @@ class KnowledgeRouter:
                 continue
             if spec.intents and intent not in spec.intents:
                 continue
+            logger.info(
+                "KnowledgeRouter | trying internal source=%r | intent=%s",
+                spec.key, intent.name,
+            )
             result = await self._call_spec(spec, text, profile, intent)
             if result is not None:
+                logger.info(
+                    "KnowledgeRouter | source=%r produced context | found=%s",
+                    spec.key, getattr(result, "found", "n/a"),
+                )
                 return result
         return None
 
@@ -212,8 +225,16 @@ class KnowledgeRouter:
                 continue
             if spec.intents and intent not in spec.intents:
                 continue
+            logger.info(
+                "KnowledgeRouter | trying live source=%r | intent=%s",
+                spec.key, intent.name,
+            )
             result = await self._call_spec(spec, text, profile, intent)
             if result is not None:
+                logger.info(
+                    "KnowledgeRouter | source=%r produced context | found=%s",
+                    spec.key, getattr(result, "found", "n/a"),
+                )
                 return result
         return None
 
@@ -248,16 +269,31 @@ class KnowledgeRouter:
         """
         from config.ai_config import ENABLE_WEB_SEARCH
         if not ENABLE_WEB_SEARCH:
+            logger.info("KnowledgeRouter | _fetch_web | ENABLE_WEB_SEARCH=False — skipped")
             return []
 
         news_mode = intent in (_LIVE_SUPPLEMENT_INTENTS | _LIVE_PRIMARY_INTENTS)
         refined   = _refine_query(text, intent)
 
-        return await web_search_service.search(
+        logger.info(
+            "KnowledgeRouter | _fetch_web | intent=%s | provider=%s | configured=%s | news_mode=%s | query=%r",
+            intent.name,
+            web_search_service.active_provider_name(),
+            web_search_service.is_configured(),
+            news_mode,
+            refined,
+        )
+
+        results = await web_search_service.search(
             refined,
             intent_name=intent.name,
             news_mode=news_mode,
         )
+        logger.info(
+            "KnowledgeRouter | _fetch_web | %d results returned | intent=%s",
+            len(results), intent.name,
+        )
+        return results
 
     # ── Default source registration ────────────────────────────────────────────
 
@@ -357,11 +393,25 @@ class KnowledgeRouter:
         async def _handle_web_primary(text: str, profile: dict, intent: Intent) -> AIContext | None:
             from config.ai_config import ENABLE_WEB_SEARCH
             if not ENABLE_WEB_SEARCH:
+                logger.info(
+                    "KnowledgeRouter | web_primary | ENABLE_WEB_SEARCH=False — skipped"
+                )
                 return None
+            refined = _refine_query(text, intent)
+            logger.info(
+                "KnowledgeRouter | web_primary | routing to provider=%s | configured=%s | query=%r",
+                web_search_service.active_provider_name(),
+                web_search_service.is_configured(),
+                refined,
+            )
             results = await web_search_service.search(
-                _refine_query(text, intent),
+                refined,
                 intent_name=intent.name,
                 news_mode=True,
+            )
+            logger.info(
+                "KnowledgeRouter | web_primary | %d results | intent=%s",
+                len(results), intent.name,
             )
             if not results:
                 return None

@@ -459,8 +459,22 @@ def _extract_domain(url: str) -> str:
         return url
 
 
+# ── Auto-load built-in provider modules ───────────────────────────────────────
+# Each module self-registers via register_provider() on import.
+# The import must occur AFTER all public types are defined (above) but BEFORE
+# the singleton is created (below) so _resolve_provider() sees every provider.
+#
+# To add a new built-in provider: drop a new services/<name>_search.py and
+# add an import here.  External (third-party) providers must be imported by
+# the application entry-point before this module is first used.
+try:
+    import services.brave_search as _brave_module  # noqa: F401 — side-effect registration
+except Exception as _brave_err:
+    logger.warning("WebSearch | brave_search auto-load failed: %s", _brave_err)
+
+
 # ── Module-level singleton ────────────────────────────────────────────────────
-# Instantiated after all built-in providers are registered above.
+# Instantiated after all built-in providers have self-registered above.
 # KnowledgeRouter imports this object and calls .search() on it — never
-# imports SerpAPIProvider or any other concrete class.
+# imports SerpAPIProvider, BraveSearchProvider, or any other concrete class.
 web_search_service = WebSearchService()

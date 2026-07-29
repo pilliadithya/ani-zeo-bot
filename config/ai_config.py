@@ -73,10 +73,12 @@ CACHE_TTL_SECONDS: int = 3_600
 ENABLE_KNOWLEDGE_ROUTER: bool = True
 
 # ── Web Search ─────────────────────────────────────────────────────────────────
-# Master switch — False until SERPAPI_KEY is configured.
-# When False, WebSearchService.search() returns [] immediately (zero overhead).
-ENABLE_WEB_SEARCH: bool       = False
-WEB_SEARCH_PROVIDER: str      = "serpapi"   # swappable: "serpapi" | future providers
+# Master switch.  When False, WebSearchService.search() returns [] immediately.
+# Provider is resolved from the registry in services/web_search.py at startup.
+# To add a new provider: create services/<name>_search.py, subclass
+# BaseWebSearchProvider, and call register_provider("<name>", YourClass).
+ENABLE_WEB_SEARCH: bool       = True
+WEB_SEARCH_PROVIDER: str      = "brave"     # swappable: "brave" | "serpapi" | any registered key
 WEB_SEARCH_MAX_RESULTS: int   = 3           # snippets injected per query
 WEB_SEARCH_TIMEOUT: int       = 8           # seconds — hard cap per request
 WEB_SEARCH_CACHE_TTL: int     = 1_800       # 30 min — topics don't change mid-conversation
